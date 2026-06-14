@@ -2,10 +2,10 @@
 Real-time facial analysis with color season classification and virtual makeup try-on.
 
 ## Milestones
-[x] Set a camera capture
-[] Train a model to give out AT LEAST: face undertone, face contrast, eye color.
-[] Then expand to analyse and give out a color analysis
-[] Train a model to find the passing makeup
+- [x] Set a camera capture
+- [ ] Train a model to give out AT LEAST: face undertone, face contrast, eye color.
+- [ ] Then expand to analyse and give out a color analysis
+- [ ] Train a model to find the passing makeup
 
 ## Tech stack
 
@@ -26,6 +26,7 @@ This application runs locally. No images are uploaded or stored by default.
 
 ## Files usage
 App: 
-    - face_landmarks.py: Opens the camera, finds landmarks
-    - face_validation.py: Checks the camera for clear picture to improve future model's predictions
-    - face_segmentation.py: Makes sure that the face mask is correct
+- face_landmarks.py: Opens the camera, finds landmarks
+- face_validation.py: Checks the camera for clear picture to improve future model's predictions
+- face_segmentation.py: Makes sure that the face mask is correct
+
