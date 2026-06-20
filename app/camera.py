@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 from face_validation import validateFace
+from face_segmentation import faceSeg
 
 mp_drawing = mp.solutions.drawing_utils
 mp_DrawingStyles = mp.solutions.drawing_styles
@@ -32,34 +33,36 @@ def run_camera():
                 for faceLandmarks in results.multi_face_landmarks:
                     validationErrors = validateFace(image, faceLandmarks)
 
-                    for index, error in enumerate(validationErrors):
-                        cv2.putText(
-                            image,
-                            error,
-                            (30, 40 + index * 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7,
-                            (0, 0, 255),
-                            2,
+                    if validationErrors:
+                        for index, error in enumerate(validationErrors):
+                            cv2.putText(
+                                image,
+                                error,
+                                (30, 40 + index * 30),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                (0, 0, 255),
+                                2,
+                            )
+                    else:
+                        faceSegmentation = faceSeg(image, faceLandmarks)
+
+                        mp_drawing.draw_landmarks(
+                            image=image,
+                            landmark_list=faceLandmarks,
+                            connections=mp_FaceMesh.FACEMESH_TESSELATION,
+                            landmark_drawing_spec=None,
+                            connection_drawing_spec=mp_DrawingStyles.get_default_face_mesh_tesselation_style()
                         )
 
-                    mp_drawing.draw_landmarks(
-                        image = image,
-                        landmark_list = faceLandmarks,
-                        connections = mp_FaceMesh.FACEMESH_TESSELATION,
-                        landmark_drawing_spec = None,
-                        connection_drawing_spec = mp_DrawingStyles
-                        .get_default_face_mesh_tesselation_style()
-                    )
+                        mp_drawing.draw_landmarks(
+                            image=image,
+                            landmark_list=faceLandmarks,
+                            connections=mp_FaceMesh.FACEMESH_CONTOURS,
+                            landmark_drawing_spec=None,
+                            connection_drawing_spec=mp_DrawingStyles.get_default_face_mesh_contours_style()
+            )
 
-                    mp_drawing.draw_landmarks(
-                        image = image,
-                        landmark_list = faceLandmarks,
-                        connections = mp_FaceMesh.FACEMESH_CONTOURS,
-                        landmark_drawing_spec = None,
-                        connection_drawing_spec = mp_DrawingStyles
-                        .get_default_face_mesh_contours_style()
-                    )
             if not results.multi_face_landmarks:
                 cv2.putText(
                     image,

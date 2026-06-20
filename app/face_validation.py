@@ -1,8 +1,10 @@
 # To improve:
 #   1. Face frontal improve the Y axis stability
 #   2. See if the classifier can work with these images
+#   3. Add glasses detection
 import cv2
 import numpy as np
+from helpers import getPoint
 
 # MediaPipe indexes
 NOSE_TIP = 1
@@ -21,17 +23,7 @@ RIGHT_EYEBROW_CENTER = 334
 MIN_BRIGHTNESS = 60
 MAX_BRIGHTNESS = 200
 MIN_BLUR_SCORE = 50
-MIN_VISIBLE_FACE_RATIO = 0.9
-MIN_GLASSES_EDGE_RATIO = 0.035
-
-
-# Helper to transform relative coordinates to pixels
-def getPoint(faceLandmarks, index, imageWidth, imageHeight):
-    landmark = faceLandmarks.landmark[index]
-    x = int(landmark.x * imageWidth)
-    y = int(landmark.y * imageHeight)
-    return x, y
-
+MIN_VISIBLE_FACE_RATIO = 0.5
 
 # Helper to get a safe face crop from landmarks
 def getFaceCrop(frame, faceLandmarks):
@@ -48,26 +40,6 @@ def getFaceCrop(frame, faceLandmarks):
     maxX = min(max(xCoordinates), imageWidth)
     minY = max(min(yCoordinates), 0)
     maxY = min(max(yCoordinates), imageHeight)
-
-    if minX >= maxX or minY >= maxY:
-        return None
-
-    return frame[minY:maxY, minX:maxX]
-
-
-# Helper to crop the area where glasses are usually visible
-def getGlassesRegion(frame, faceLandmarks):
-    imageHeight, imageWidth, _ = frame.shape
-
-    leftOuterX, leftOuterY = getPoint(faceLandmarks, LEFT_EYE_OUTER, imageWidth, imageHeight)
-    rightOuterX, rightOuterY = getPoint(faceLandmarks, RIGHT_EYE_OUTER, imageWidth, imageHeight)
-    leftBrowX, leftBrowY = getPoint(faceLandmarks, LEFT_EYEBROW_CENTER, imageWidth, imageHeight)
-    rightBrowX, rightBrowY = getPoint(faceLandmarks, RIGHT_EYEBROW_CENTER, imageWidth, imageHeight)
-
-    minX = max(min(leftOuterX, rightOuterX) - 20, 0)
-    maxX = min(max(leftOuterX, rightOuterX) + 20, imageWidth)
-    minY = max(min(leftBrowY, rightBrowY) - 15, 0)
-    maxY = min(max(leftOuterY, rightOuterY) + 35, imageHeight)
 
     if minX >= maxX or minY >= maxY:
         return None
@@ -150,21 +122,6 @@ def isFaceClear(frame, faceLandmarks):
     return errors
 
 
-# Heuristic check for glasses in the eye region
-def hasGlasses(frame, faceLandmarks):
-    glassesRegion = getGlassesRegion(frame, faceLandmarks)
-
-    if glassesRegion is None:
-        return False
-
-    gray = cv2.cvtColor(glassesRegion, cv2.COLOR_BGR2GRAY)
-    blurredGray = cv2.GaussianBlur(gray, (3, 3), 0)
-
-    edges = cv2.Canny(blurredGray, 50, 150)
-    edgeRatio = np.count_nonzero(edges) / edges.size
-
-    return edgeRatio > MIN_GLASSES_EDGE_RATIO
-
 
 # Function that puts it all together
 def validateFace(frame, faceLandmarks):
@@ -176,8 +133,5 @@ def validateFace(frame, faceLandmarks):
 
     errors.extend(lighting(frame, faceLandmarks))
     errors.extend(isFaceClear(frame, faceLandmarks))
-
-    if hasGlasses(frame, faceLandmarks):
-        errors.append("Glasses detected. Please remove them for a more accurate analysis.")
 
     return errors
