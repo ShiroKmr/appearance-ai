@@ -45,23 +45,7 @@ def run_camera():
                                 2,
                             )
                     else:
-                        faceSegmentation = faceSeg(image, faceLandmarks)
-
-                        mp_drawing.draw_landmarks(
-                            image=image,
-                            landmark_list=faceLandmarks,
-                            connections=mp_FaceMesh.FACEMESH_TESSELATION,
-                            landmark_drawing_spec=None,
-                            connection_drawing_spec=mp_DrawingStyles.get_default_face_mesh_tesselation_style()
-                        )
-
-                        mp_drawing.draw_landmarks(
-                            image=image,
-                            landmark_list=faceLandmarks,
-                            connections=mp_FaceMesh.FACEMESH_CONTOURS,
-                            landmark_drawing_spec=None,
-                            connection_drawing_spec=mp_DrawingStyles.get_default_face_mesh_contours_style()
-            )
+                        faceSeg(image, faceLandmarks)
 
             if not results.multi_face_landmarks:
                 cv2.putText(

@@ -1,7 +1,3 @@
-# To improve:
-#   1. Face frontal improve the Y axis stability
-#   2. See if the classifier can work with these images
-#   3. Add glasses detection
 import cv2
 import numpy as np
 from helpers import getPoint
@@ -20,8 +16,7 @@ LEFT_EYEBROW_CENTER = 105
 RIGHT_EYEBROW_CENTER = 334
 
 # Thresholds for validation
-MIN_BRIGHTNESS = 60
-MAX_BRIGHTNESS = 200
+MIN_BRIGHTNESS = 100
 MIN_BLUR_SCORE = 50
 MIN_VISIBLE_FACE_RATIO = 0.5
 
@@ -46,7 +41,6 @@ def getFaceCrop(frame, faceLandmarks):
 
     return frame[minY:maxY, minX:maxX]
 
-
 # Decide if the face is frontal
 def isFaceFrontal(faceLandmarks, imageWidth, imageHeight):
     noseX, _ = getPoint(faceLandmarks, NOSE_TIP, imageWidth, imageHeight)
@@ -62,32 +56,6 @@ def isFaceFrontal(faceLandmarks, imageWidth, imageHeight):
     ratioX = leftDistance / rightDistance
 
     return 0.65 <= ratioX <= 1.35
-
-
-# Check whether the lighting is acceptable
-def lighting(frame, faceLandmarks=None):
-    errors = []
-
-    if faceLandmarks is not None:
-        imageToCheck = getFaceCrop(frame, faceLandmarks)
-
-        if imageToCheck is None:
-            errors.append("Face could not be cropped correctly.")
-            return errors
-    else:
-        imageToCheck = frame
-
-    gray = cv2.cvtColor(imageToCheck, cv2.COLOR_BGR2GRAY)
-    brightness = gray.mean()
-
-    if brightness < MIN_BRIGHTNESS:
-        errors.append("Too dark. Please improve the lighting.")
-
-    if brightness > MAX_BRIGHTNESS:
-        errors.append("Too bright. Please reduce the lighting.")
-
-    return errors
-
 
 # Check whether the face is sharp and not strongly covered
 def isFaceClear(frame, faceLandmarks):
@@ -121,8 +89,6 @@ def isFaceClear(frame, faceLandmarks):
 
     return errors
 
-
-
 # Function that puts it all together
 def validateFace(frame, faceLandmarks):
     errors = []
@@ -131,7 +97,6 @@ def validateFace(frame, faceLandmarks):
     if not isFaceFrontal(faceLandmarks, imageWidth, imageHeight):
         errors.append("Please look straight into the camera.")
 
-    errors.extend(lighting(frame, faceLandmarks))
     errors.extend(isFaceClear(frame, faceLandmarks))
 
     return errors
