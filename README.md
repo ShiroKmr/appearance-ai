@@ -5,7 +5,8 @@ Real-time facial analysis with color season classification and virtual makeup tr
 - [x] Set a camera capture
 - [ ] Create a test with numpy:
     - [x] Features analysis
-    - [ ] Color season
+    - [ ] Hair color analysis
+    - [x] Color season
 - [ ] Train a model to give out AT LEAST: face undertone, face contrast, eye color.
 - [ ] Then expand to analyse and give out a color analysis
 - [ ] Train a model to find the passing makeup

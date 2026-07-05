@@ -49,7 +49,6 @@ def analyzeIrisColor(frame, faceLandmarks):
     value = int(hsvColor[2])
 
     label = "Unknown"
-    print(hue, " ", saturation, " ", value, "\n")
     if value < 45:
         label = "Deep dark brown"
     elif value < 80 and saturation < 80:

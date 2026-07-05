@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 from face_validation import validateFace
 from face_segmentation import faceSeg
+from season_classifier import classifySeason, drawSeasonResult
 
 mp_drawing = mp.solutions.drawing_utils
 mp_DrawingStyles = mp.solutions.drawing_styles
@@ -45,7 +46,9 @@ def run_camera():
                                 2,
                             )
                     else:
-                        faceSeg(image, faceLandmarks)
+                        analysisResult = faceSeg(image, faceLandmarks)
+                        seasonResult = classifySeason(analysisResult)
+                        drawSeasonResult(image, seasonResult)
 
             if not results.multi_face_landmarks:
                 cv2.putText(
