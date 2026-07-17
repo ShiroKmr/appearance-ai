@@ -3,19 +3,21 @@ Real-time facial analysis with color season classification and virtual makeup tr
 
 ## Milestones
 - [x] Set a camera capture
-- [ ] Create a test with numpy:
+- [x] Create a test with numpy:
     - [x] Features analysis
     - [ ] Hair color analysis
     - [x] Color season
-- [ ] Train a model to give out AT LEAST: face undertone, face contrast, eye color.
-- [ ] Then expand to analyse and give out a color analysis
-- [ ] Train a model to find the passing makeup
+- [ ] Train a model on the dataset
+- [ ] Expand to capture the faceMesh and give out an analysis real-time
+- [ ] Male-up overlay
 
 ## Tech stack
 - Python
 - OpenCV
 - MediaPipe
 - NumPy
+- Pandas
+- Pathlib
 
 ## How to run
 ```bash
@@ -33,9 +35,15 @@ App:
 - face_validation.py: Checks the camera for clear picture to improve future model's predictions
 - face_segmentation.py: Color analysis
 - season_classifier.py: Takes face_segmentation results and outputs the color season
+Train:
+
 
 ## To-do/improvements:
 - Check for glasses
 - Check vertical head position
 - Check hair color
 - Make eye color analysis more precise
+
+## Dataset used for color analysis
+Lorenzo Stacchio and Marina Paolanti and Francesca Spigarelli and Emanuele Frontoni,
+"Deep Armocromia: A Novel Dataset for Face Seasonal Color Analysis and Classification".
