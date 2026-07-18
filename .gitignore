@@ -27,3 +27,5 @@ venv/
 !assets/.gitkeep
 
 assets/deep_armocromia/
+
+models/*

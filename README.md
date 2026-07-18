@@ -18,6 +18,8 @@ Real-time facial analysis with color season classification and virtual makeup tr
 - NumPy
 - Pandas
 - Pathlib
+- Torch/Torchvision
+- Scikit-learn
 
 ## How to run
 ```bash
@@ -35,8 +37,8 @@ App:
 - face_validation.py: Checks the camera for clear picture to improve future model's predictions
 - face_segmentation.py: Color analysis
 - season_classifier.py: Takes face_segmentation results and outputs the color season
-Train:
-
+Train - check the dataset, load and train EfficientNet model on it.
+Model - load the best model from the train to later connect it to the app.
 
 ## To-do/improvements:
 - Check for glasses
