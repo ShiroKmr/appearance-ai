@@ -28,6 +28,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python app/main.py
 ```
+Please run the application from the root directory.
 ## Privacy
 This application runs locally. No images are uploaded or stored by default.
 
@@ -37,8 +38,12 @@ App:
 - face_validation.py: Checks the camera for clear picture to improve future model's predictions
 - face_segmentation.py: Color analysis
 - season_classifier.py: Takes face_segmentation results and outputs the color season
-Train - check the dataset, load and train EfficientNet model on it.
-Model - load the best model from the train to later connect it to the app.
+Data:
+- check the dataset, rename the needed columns
+Train:
+- load and train EfficientNet model on the dataset
+Model:
+- load the best model from the train to later connect it to the app.
 
 ## To-do/improvements:
 - Check for glasses

@@ -1,7 +1,5 @@
 from pathlib import Path
-
 import pandas as pd
-
 
 projectRoot = Path(__file__).resolve().parents[1]
 
