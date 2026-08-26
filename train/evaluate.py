@@ -15,14 +15,33 @@ def loadCheckpoint(model, checkpointPath, device):
             f"{checkpointPath}"
         )
 
-    checkpoint = torch.load(checkpointPath, map_location=device)
+    checkpoint = torch.load(
+        checkpointPath,
+        map_location=device,
+        weights_only=False,
+    )
 
     if (isinstance(checkpoint, dict) and "modelState" in checkpoint):
         modelState = checkpoint["modelState"]
+
+        modelName = checkpoint.get("modelName")
+
+        if modelName not in {None, "EfficientNetV2SColorAuxiliary"}:
+            raise ValueError(
+                f"Checkpoint uses the old architecture ({modelName}). "
+                "Retrain both training stages before evaluation."
+            )
     else:
         modelState = checkpoint
 
-    model.load_state_dict(modelState)
+    try:
+        model.load_state_dict(modelState)
+    except RuntimeError as error:
+        raise RuntimeError(
+            "The checkpoint is incompatible with the improved model. "
+            "Run train/train_efficientNet.py and "
+            "train/tune_efficientNet.py before evaluation."
+        ) from error
 
     return model
 
@@ -34,6 +53,7 @@ loss, acc, prec, rec, labels, predictions = validateModel(
     dataLoader=testLoader,
     lossFunction=lossFunction,
     device=device,
+    useHorizontalFlipTta=True,
 )
 
 print(

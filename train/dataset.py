@@ -13,6 +13,15 @@ classToIndex = {
     "winter": 3,
 }
 
+subClassToIndex = {
+    "bright": 0,
+    "cool": 1,
+    "deep": 2,
+    "light": 3,
+    "soft": 4,
+    "warm": 5,
+}
+
 
 class SeasonDataset(Dataset):
     def __init__(
@@ -21,11 +30,17 @@ class SeasonDataset(Dataset):
         releaseRoot,
         partition,
         transform=None,
+        includeSubClass=False,
+        celebaOnly=None,
+        includePivotalValidation=False,
     ):
         self.annotationsPath = Path(annotationsPath)
         self.releaseRoot = Path(releaseRoot)
         self.partition = str(partition).strip().lower()
         self.transform = transform
+        self.includeSubClass = includeSubClass
+        self.celebaOnly = celebaOnly
+        self.includePivotalValidation = includePivotalValidation
 
         if not self.annotationsPath.is_file():
             raise FileNotFoundError(
@@ -39,7 +54,9 @@ class SeasonDataset(Dataset):
 
         requiredColumns = {
             "class",
+            "sub_class",
             "partition",
+            "celeba",
             "path_rgb_masked",
         }
 
@@ -68,6 +85,18 @@ class SeasonDataset(Dataset):
             .str.lower()
         )
 
+        self.annotations["sub_class"] = (
+            self.annotations["sub_class"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+
+        self.annotations["celeba"] = (
+            self.annotations["celeba"]
+            .map(self.parseBoolean)
+        )
+
         validPartitions = {
             "train",
             "validation",
@@ -81,10 +110,27 @@ class SeasonDataset(Dataset):
                 "Expected train, validation or test."
             )
 
-        self.annotations = self.annotations[
-            self.annotations["partition"]
-            == self.partition
-        ].reset_index(drop=True)
+        partitionMask = self.annotations["partition"] == self.partition
+
+        if (
+            self.partition == "train"
+            and self.includePivotalValidation
+        ):
+            pivotalValidationMask = (
+                (self.annotations["partition"] == "validation")
+                & ~self.annotations["celeba"]
+            )
+            partitionMask = partitionMask | pivotalValidationMask
+
+        self.annotations = self.annotations[partitionMask]
+
+        if self.celebaOnly is not None:
+            self.annotations = self.annotations[
+                self.annotations["celeba"]
+                == bool(self.celebaOnly)
+            ]
+
+        self.annotations = self.annotations.reset_index(drop=True)
 
         if len(self.annotations) == 0:
             raise ValueError(
@@ -102,6 +148,32 @@ class SeasonDataset(Dataset):
                 "Unknown classes found: "
                 f"{sorted(unknownClasses)}"
             )
+
+        unknownSubClasses = (
+            set(self.annotations["sub_class"].unique())
+            - set(subClassToIndex.keys())
+        )
+
+        if unknownSubClasses:
+            raise ValueError(
+                "Unknown sub-classes found: "
+                f"{sorted(unknownSubClasses)}"
+            )
+
+    @staticmethod
+    def parseBoolean(value):
+        if isinstance(value, bool):
+            return value
+
+        normalizedValue = str(value).strip().lower()
+
+        if normalizedValue in {"true", "1", "yes"}:
+            return True
+
+        if normalizedValue in {"false", "0", "no"}:
+            return False
+
+        raise ValueError(f"Unknown boolean value: {value}")
 
     def __len__(self):
         return len(self.annotations)
@@ -125,7 +197,19 @@ class SeasonDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
+        if self.includeSubClass:
+            subClassName = row["sub_class"]
+            subClassIndex = subClassToIndex[subClassName]
+
+            return image, classIndex, subClassIndex
+
         return image, classIndex
+
+    def getSourceSamplingWeights(self, celebaWeight=2.0):
+        return [
+            celebaWeight if isCeleba else 1.0
+            for isCeleba in self.annotations["celeba"].tolist()
+        ]
 
     def resolveImagePath(self, row):
         csvPath = str(

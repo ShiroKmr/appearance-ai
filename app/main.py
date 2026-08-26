@@ -1,4 +1,4 @@
-from camera import run_camera
+from camera import runCamera
 
 if __name__ == "__main__":
-    run_camera()
+    runCamera()

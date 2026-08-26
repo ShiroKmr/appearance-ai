@@ -1,71 +1,86 @@
 import cv2
 import mediapipe as mp
+
 from face_validation import validateFace
-from face_segmentation import faceSeg
-from season_classifier import classifySeason, drawSeasonResult
+from neural_season_classifier import SeasonPredictor, drawSeasonPrediction
 
-mp_drawing = mp.solutions.drawing_utils
-mp_DrawingStyles = mp.solutions.drawing_styles
 
-def run_camera():
-    mp_FaceMesh = mp.solutions.face_mesh
+def runCamera():
+    faceMeshModule = mp.solutions.face_mesh
+    seasonPredictor = SeasonPredictor()
+    cameraCapture = cv2.VideoCapture(0)
+    currentPrediction = None
+    missingFrameCount = 0
 
-    with mp_FaceMesh.FaceMesh(
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    ) as faceMesh:
-        # Access the main camera: 0
-        cap = cv2.VideoCapture(0)
+    if not cameraCapture.isOpened():
+        seasonPredictor.close()
+        raise RuntimeError("The camera could not be opened.")
 
-        while cap.isOpened():
-            # If the image capture isn't successfull, then break
-            success, image = cap.read()
+    try:
+        with faceMeshModule.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        ) as faceMesh:
+            while cameraCapture.isOpened():
+                success, image = cameraCapture.read()
 
-            if not success:
-                break
-            
-            image = cv2.flip(image, 1)
-            imageRgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = faceMesh.process(imageRgb)
+                if not success:
+                    break
 
-            if results.multi_face_landmarks:
-                for faceLandmarks in results.multi_face_landmarks:
+                image = cv2.flip(image, 1)
+                imageRgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                results = faceMesh.process(imageRgb)
+
+                if results.multi_face_landmarks:
+                    missingFrameCount = 0
+                    faceLandmarks = results.multi_face_landmarks[0]
                     validationErrors = validateFace(image, faceLandmarks)
 
                     if validationErrors:
+                        drawSeasonPrediction(image, currentPrediction)
+
                         for index, error in enumerate(validationErrors):
                             cv2.putText(
                                 image,
                                 error,
-                                (30, 40 + index * 30),
+                                (30, 95 + index * 30),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.7,
                                 (0, 0, 255),
                                 2,
                             )
                     else:
-                        analysisResult = faceSeg(image, faceLandmarks)
-                        seasonResult = classifySeason(analysisResult)
-                        drawSeasonResult(image, seasonResult)
+                        # Valid frames are periodically classified while the latest stable result remains visible between inferences.
+                        currentPrediction = seasonPredictor.processFrame(
+                            image,
+                            imageRgb,
+                            faceLandmarks,
+                        )
+                        drawSeasonPrediction(image, currentPrediction)
+                else:
+                    missingFrameCount += 1
 
-            if not results.multi_face_landmarks:
-                cv2.putText(
-                    image,
-                    "No face detected.",
-                    (30, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 0, 255),
-                    2,
-                )
+                    if missingFrameCount >= 15:
+                        seasonPredictor.reset()
+                        currentPrediction = None
 
-            # Show the captured image and exit if 'q' is pressed
-            cv2.imshow("My face", image)
+                    cv2.putText(
+                        image,
+                        "No face detected.",
+                        (30, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 0, 255),
+                        2,
+                    )
 
-            if cv2.waitKey(100) == ord('q'):
-                break
+                cv2.imshow("Color season analysis", image)
 
-        cap.release()
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+    finally:
+        cameraCapture.release()
+        seasonPredictor.close()
         cv2.destroyAllWindows()

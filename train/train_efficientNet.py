@@ -1,33 +1,45 @@
-# Train the model
-from torch import nn
-from torch.optim import Adam
+from itertools import chain
 
-from training_helpers import trainEpochs, model
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
-# Device: mps
-# Loss function: CrossEntropyLoss()
-# Optimizer: Adam (
-# Parameter Group 0
-#     amsgrad: False
-#     betas: (0.9, 0.999)
-#     capturable: False
-#     decoupled_weight_decay: False
-#     differentiable: False
-#     eps: 1e-08
-#     foreach: None
-#     fused: None
-#     lr: 0.001
-#     maximize: False
-#     weight_decay: 0
-# )
-# Optimizer parameter count: 5124
+from training_helpers import classifierCheckpointPath, createLossFunctions, model, trainEpochs
 
-# Define the hyperparameters
+numberOfEpochs = 20
 learningRate = 0.001
-lossFunction = nn.CrossEntropyLoss()
-optimizer = Adam(model.classifier.parameters(), lr=learningRate)
-numberOfEpochs = 10
 
-tuneIndicator = False
+seasonLossFunction, subClassLossFunction = createLossFunctions()
 
-trainEpochs(numberOfEpochs, lossFunction, optimizer, model, tuneIndicator)
+classificationParameters = chain(
+    model.classifier.parameters(),
+    model.seasonHead.parameters(),
+    model.subClassHead.parameters(),
+)
+
+optimizer = AdamW(
+    classificationParameters,
+    lr=learningRate,
+    weight_decay=1e-4,
+)
+scheduler = CosineAnnealingLR(
+    optimizer,
+    T_max=numberOfEpochs,
+    eta_min=1e-5,
+)
+
+bestAccuracy = trainEpochs(
+    numberOfEpochs=numberOfEpochs,
+    seasonLossFunction=seasonLossFunction,
+    subClassLossFunction=subClassLossFunction,
+    optimizer=optimizer,
+    model=model,
+    destinationPath=classifierCheckpointPath,
+    scheduler=scheduler,
+    patience=7,
+    auxiliaryLossWeight=0.35,
+    exponentialMovingAverageDecay=0.995,
+    freezeBatchNormalization=True,
+    stageName="classifier",
+)
+
+print(f"Best CelebA validation accuracy: {bestAccuracy:.4f}")

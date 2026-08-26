@@ -7,7 +7,7 @@ Real-time facial analysis with color season classification and virtual makeup tr
     - [x] Features analysis
     - [ ] Hair color analysis
     - [x] Color season
-- [ ] Train a model on the dataset
+- [x] Train a model on the dataset
 - [ ] Expand to capture the faceMesh and give out an analysis real-time
 - [ ] Male-up overlay
 
@@ -29,6 +29,9 @@ pip install -r requirements.txt
 python app/main.py
 ```
 Please run the application from the root directory.
+The camera view loads `models/best_tune_efficientNet.pth`, classifies valid
+FaceMesh frames, and displays a temporally smoothed season prediction.
+
 ## Privacy
 This application runs locally. No images are uploaded or stored by default.
 
@@ -54,3 +57,5 @@ Model:
 ## Dataset used for color analysis
 Lorenzo Stacchio and Marina Paolanti and Francesca Spigarelli and Emanuele Frontoni,
 "Deep Armocromia: A Novel Dataset for Face Seasonal Color Analysis and Classification".
+
+The current model has an accuracy of 52/% on the evaluation set.
