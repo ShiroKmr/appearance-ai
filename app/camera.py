@@ -4,7 +4,6 @@ import mediapipe as mp
 from face_validation import validateFace
 from neural_season_classifier import SeasonPredictor, drawSeasonPrediction
 
-
 def runCamera():
     faceMeshModule = mp.solutions.face_mesh
     seasonPredictor = SeasonPredictor()
@@ -17,12 +16,7 @@ def runCamera():
         raise RuntimeError("The camera could not be opened.")
 
     try:
-        with faceMeshModule.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        ) as faceMesh:
+        with faceMeshModule.FaceMesh(max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5,min_tracking_confidence=0.5) as faceMesh:
             while cameraCapture.isOpened():
                 success, image = cameraCapture.read()
 
@@ -53,11 +47,7 @@ def runCamera():
                             )
                     else:
                         # Valid frames are periodically classified while the latest stable result remains visible between inferences.
-                        currentPrediction = seasonPredictor.processFrame(
-                            image,
-                            imageRgb,
-                            faceLandmarks,
-                        )
+                        currentPrediction = seasonPredictor.processFrame(image,imageRgb,faceLandmarks)
                         drawSeasonPrediction(image, currentPrediction)
                 else:
                     missingFrameCount += 1

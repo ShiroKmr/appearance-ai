@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from helpers import getPoints, getRegionMedianColor, getLuminance
+from app.baseline.helpers import getPoints, getRegionMedianColor, getLuminance
 
 # MediaPipe FaceMesh landmark groups
 leftIrisIndexes = [468, 469, 470, 471, 472]

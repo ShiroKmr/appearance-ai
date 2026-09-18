@@ -1,25 +1,8 @@
 from pathlib import Path
 import pandas as pd
 
-projectRoot = Path(__file__).resolve().parents[1]
-
-datasetRoot = projectRoot / "assets" / "deep_armocromia"
-releaseRoot = datasetRoot / "release"
-
-annotationsCandidates = [
-    datasetRoot / "annotations.csv",
-    releaseRoot / "annotations.csv",
-]
-
-annotationsPath = next(
-    (
-        candidatePath
-        for candidatePath in annotationsCandidates
-        if candidatePath.is_file()
-    ),
-    None,
-)
-
+annotationsPath = Path("assets/deep_armocromia/release/annotations.csv")
+releaseRoot = Path("assets/deep_armocromia/release")
 
 columnFolders = {
     "path_rgb_original": "RGB",
@@ -39,18 +22,9 @@ def resolvePath(csvPath, columnName, partition):
     relativeParts = csvPath.parts[1:]
 
     if relativeParts and relativeParts[0] in {"train", "test"}:
-        return (
-            releaseRoot
-            / targetFolder
-            / Path(*relativeParts)
-        )
+        return releaseRoot / targetFolder / Path(*relativeParts)
 
-    return (
-        releaseRoot
-        / targetFolder
-        / str(partition).strip().lower()
-        / Path(*relativeParts)
-    )
+    return releaseRoot / targetFolder / str(partition).strip().lower() / Path(*relativeParts)
 
 
 def checkPaths(dataFrame, columnName):
@@ -61,11 +35,7 @@ def checkPaths(dataFrame, columnName):
         csvPath = row[columnName]
         partition = row["partition"]
 
-        resolvedPath = resolvePath(
-            csvPath,
-            columnName,
-            partition,
-        )
+        resolvedPath = resolvePath(csvPath,columnName,partition)
 
         if resolvedPath is not None and resolvedPath.is_file():
             foundCount += 1
@@ -94,19 +64,6 @@ def checkPaths(dataFrame, columnName):
             print()
 
     return missingPaths
-
-
-if annotationsPath is None:
-    checkedPaths = "\n".join(
-        str(candidatePath)
-        for candidatePath in annotationsCandidates
-    )
-
-    raise FileNotFoundError(
-        "annotations.csv was not found. Checked:\n"
-        f"{checkedPaths}"
-    )
-
 
 annotations = pd.read_csv(annotationsPath)
 

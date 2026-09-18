@@ -1,36 +1,21 @@
-import sys
 from pathlib import Path
 
 import cv2
 import mediapipe as mp
 import numpy as np
 import torch
+from torch import transforms
+from res_insert import ResNet18, testTransform
 from PIL import Image
 
-
-projectRoot = Path(__file__).resolve().parents[1]
-trainRoot = projectRoot / "train"
-
-if str(trainRoot) not in sys.path:
-    sys.path.insert(0, str(trainRoot))
-
-from model_efficientNet import loadPretrainedModel
-
-
-defaultCheckpointPath = projectRoot / "models" / "best_tune_efficientNet.pth"
-expectedModelName = "EfficientNetV2SColorAuxiliary"
+path = Path("models/resNet18_season")
+expectedModelName = "ResNet18"
 defaultClassNames = ["spring", "summer", "autumn", "winter"]
+defaultSubClassNames = ["bright", "cool", "deep", "light", "soft", "warm"]
 
 
 class SeasonPredictor:
-    def __init__(
-        self,
-        checkpointPath=defaultCheckpointPath,
-        predictionInterval=8,
-        smoothingDecay=0.85,
-        minimumPredictionCount=3,
-        minimumConfidence=0.45,
-    ):
+    def __init__(self, checkpointPath=path, predictionInterval=8, smoothingDecay=0.85, minimumPredictionCount=3, minimumConfidence=0.45):
         self.checkpointPath = Path(checkpointPath)
         self.predictionInterval = predictionInterval
         self.smoothingDecay = smoothingDecay
@@ -42,78 +27,28 @@ class SeasonPredictor:
         self.smoothedProbabilities = None
 
         # The model is loaded once and reused for every accepted camera frame.
-        self.model, weights = loadPretrainedModel(
-            usePretrainedWeights=False
-        )
-        self.device = self.getDevice()
+        self.device = torch.device("mps")
+        self.model = ResNet18()
+        stateDict = torch.load(self.checkpointPath, map_location=self.device)
+        self.model.load_state_dict(stateDict)
+    
         self.model = self.model.to(self.device)
-        self.inputTransform = weights.transforms()
+        self.inputTransform = testTransform
+
         self.classNames = list(defaultClassNames)
+        self.subClassNames = list(defaultSubClassNames)
 
         self.loadCheckpoint()
         self.model.eval()
 
         self.personSegmenter = self.createPersonSegmenter()
 
-    def getDevice(self):
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-
-        return torch.device("cpu")
-
     def createPersonSegmenter(self):
         try:
-            return mp.solutions.selfie_segmentation.SelfieSegmentation(
-                model_selection=1
-            )
+            return mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
         except RuntimeError:
-            print(
-                "Warning: hair segmentation is unavailable; "
-                "using the FaceMesh mask only."
-            )
-
+            print("Warning: hair segmentation is unavailable; using the FaceMesh mask only.")
             return None
-
-    def loadCheckpoint(self):
-        if not self.checkpointPath.is_file():
-            raise FileNotFoundError(
-                "Fine-tuned season checkpoint was not found:\n"
-                f"{self.checkpointPath}\n"
-                "Run python train/train_efficientNet.py followed by "
-                "python train/tune_efficientNet.py."
-            )
-
-        checkpoint = torch.load(
-            self.checkpointPath,
-            map_location=self.device,
-            weights_only=False,
-        )
-
-        if not isinstance(checkpoint, dict) or "modelState" not in checkpoint:
-            raise ValueError(
-                "The season checkpoint does not contain modelState."
-            )
-
-        modelName = checkpoint.get("modelName")
-
-        if modelName != expectedModelName:
-            raise ValueError(
-                "The season checkpoint uses an incompatible architecture: "
-                f"{modelName}."
-            )
-
-        self.model.load_state_dict(checkpoint["modelState"])
-
-        classToIndex = checkpoint.get("classToIndex", {})
-
-        if classToIndex:
-            orderedClassNames = [None] * len(classToIndex)
-
-            for className, classIndex in classToIndex.items():
-                orderedClassNames[classIndex] = className
-
-            if None not in orderedClassNames:
-                self.classNames = orderedClassNames
 
     def calculateCropBounds(self, frame, faceLandmarks):
         imageHeight, imageWidth = frame.shape[:2]
@@ -145,18 +80,10 @@ class SeasonPredictor:
         cropMinimumY = max(int(minimumY - 0.72 * faceHeight), 0)
         cropMaximumY = min(int(maximumY + 0.18 * faceHeight), imageHeight)
 
-        if (
-            cropMinimumX >= cropMaximumX
-            or cropMinimumY >= cropMaximumY
-        ):
+        if (cropMinimumX >= cropMaximumX or cropMinimumY >= cropMaximumY):
             return None
 
-        return (
-            cropMinimumX,
-            cropMinimumY,
-            cropMaximumX,
-            cropMaximumY,
-        )
+        return cropMinimumX, cropMinimumY, cropMaximumX, cropMaximumY
 
     def createFaceMask(self, frame, faceLandmarks):
         imageHeight, imageWidth = frame.shape[:2]
@@ -177,42 +104,26 @@ class SeasonPredictor:
         faceHull = cv2.convexHull(facePoints)
         cv2.fillConvexPoly(faceMask, faceHull, 255)
 
-        return cv2.dilate(
-            faceMask,
-            np.ones((7, 7), dtype=np.uint8),
-            iterations=1,
-        )
+        return cv2.dilate(faceMask, np.ones((7, 7), dtype=np.uint8),iterations=1)
 
     def makeSquareImage(self, image):
         imageHeight, imageWidth = image.shape[:2]
         squareSize = max(imageHeight, imageWidth)
-        squareImage = np.zeros(
-            (squareSize, squareSize, 3),
-            dtype=image.dtype,
-        )
+        squareImage = np.zeros((squareSize, squareSize, 3),dtype=image.dtype)
+
         xOffset = (squareSize - imageWidth) // 2
         yOffset = (squareSize - imageHeight) // 2
-        squareImage[
-            yOffset:yOffset + imageHeight,
-            xOffset:xOffset + imageWidth,
-        ] = image
+        squareImage[yOffset:yOffset + imageHeight, xOffset:xOffset + imageWidth] = image
 
         return squareImage
 
-    def createMaskedHeadImage(
-        self,
-        frame,
-        imageRgb,
-        faceLandmarks,
-    ):
+    def createMaskedHeadImage(self,frame,imageRgb,faceLandmarks):
         cropBounds = self.calculateCropBounds(frame, faceLandmarks)
 
         if cropBounds is None:
             return None
 
-        cropMinimumX, cropMinimumY, cropMaximumX, cropMaximumY = (
-            cropBounds
-        )
+        cropMinimumX, cropMinimumY, cropMaximumX, cropMaximumY = cropBounds
         imageHeight, imageWidth = frame.shape[:2]
 
         faceMask = self.createFaceMask(frame, faceLandmarks)

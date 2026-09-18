@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from helpers import getPoint
+from app.baseline.helpers import getPoint
 
 # MediaPipe indexes
 NOSE_TIP = 1
@@ -19,6 +19,26 @@ RIGHT_EYEBROW_CENTER = 334
 MIN_BRIGHTNESS = 100
 MIN_BLUR_SCORE = 50
 MIN_VISIBLE_FACE_RATIO = 0.5
+
+# Helper to transform relative coordinates to pixels
+def getPoint(faceLandmarks, index, imageWidth, imageHeight):
+    landmark = faceLandmarks.landmark[index]
+    x = int(landmark.x * imageWidth)
+    y = int(landmark.y * imageHeight)
+    return x, y
+
+# Created arrays of points
+def getPoints(frame, faceLandmarks, indexes):
+    points = []
+    imageHeight, imageWidth, _ = frame.shape
+
+    for index in indexes:
+        if index >= len(faceLandmarks.landmark):
+            continue
+
+        points.append(getPoint(faceLandmarks, index, imageWidth, imageHeight))
+
+    return np.array(points, dtype=np.int32)
 
 # Helper to get a safe face crop from landmarks
 def getFaceCrop(frame, faceLandmarks):
