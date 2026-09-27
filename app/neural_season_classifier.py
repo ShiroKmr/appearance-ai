@@ -4,7 +4,6 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import torch
-from torch import transforms
 from res_insert import ResNet18, testTransform
 from PIL import Image
 
@@ -43,15 +42,18 @@ class SeasonPredictor:
 
         self.personSegmenter = self.createPersonSegmenter()
 
+    # Create an automatic person segmenter, including hair, shoulders, etc
     def createPersonSegmenter(self):
-        try:
+        try: # Choose the landscape model, import selfie segmentation from MediaPipe to separate the face from the background
             return mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
         except RuntimeError:
             print("Warning: hair segmentation is unavailable; using the FaceMesh mask only.")
             return None
 
-    def calculateCropBounds(self, frame, faceLandmarks):
+    # Сrop the face (as a rectangle) and return the colored version of it
+    def fillFaceRectangle(self, frame, faceLandmarks):
         imageHeight, imageWidth = frame.shape[:2]
+        # Scale the coordinates bavk to pixels and not relative numbers, do so for every landmark
         xCoordinates = np.array(
             [
                 landmark.x * imageWidth
@@ -65,6 +67,7 @@ class SeasonPredictor:
             ]
         )
 
+        # Choose the min and max to find the boarders of the face and calculate its width and height
         minimumX = float(xCoordinates.min())
         maximumX = float(xCoordinates.max())
         minimumY = float(yCoordinates.min())
@@ -75,6 +78,7 @@ class SeasonPredictor:
         if faceWidth <= 1 or faceHeight <= 1:
             return None
 
+        # Move the boarders to the sides, so some hair is visible
         cropMinimumX = max(int(minimumX - 0.42 * faceWidth), 0)
         cropMaximumX = min(int(maximumX + 0.42 * faceWidth), imageWidth)
         cropMinimumY = max(int(minimumY - 0.72 * faceHeight), 0)
@@ -83,29 +87,46 @@ class SeasonPredictor:
         if (cropMinimumX >= cropMaximumX or cropMinimumY >= cropMaximumY):
             return None
 
-        return cropMinimumX, cropMinimumY, cropMaximumX, cropMaximumY
+        headRegionMask = np.zeros((imageHeight, imageWidth),dtype=np.uint8)
+        return  cv2.rectangle(
+                    headRegionMask,
+                    (cropMinimumX, cropMinimumY),
+                    (cropMaximumX, cropMaximumY),
+                    255,
+                    thickness=-1,
+                ), cropMinimumX, cropMaximumX, cropMinimumY, cropMaximumY
 
-    def createFaceMask(self, frame, faceLandmarks):
-        imageHeight, imageWidth = frame.shape[:2]
-        facePoints = np.array(
-            [
-                [
-                    int(landmark.x * imageWidth),
-                    int(landmark.y * imageHeight),
-                ]
-                for landmark in faceLandmarks.landmark[:468]
-            ],
-            dtype=np.int32,
-        )
-        facePoints[:, 0] = np.clip(facePoints[:, 0], 0, imageWidth - 1)
-        facePoints[:, 1] = np.clip(facePoints[:, 1], 0, imageHeight - 1)
+    # Create a mask for the face only using convex hull
+    # def createFaceMask(self, frame, faceLandmarks):
+    #     imageHeight, imageWidth = frame.shape[:2]
 
-        faceMask = np.zeros((imageHeight, imageWidth), dtype=np.uint8)
-        faceHull = cv2.convexHull(facePoints)
-        cv2.fillConvexPoly(faceMask, faceHull, 255)
+    #     # Scale the coordinatess back to pixels
+    #     xCoordinates = np.array(
+    #         [
+    #             int(landmark.x * imageWidth)
+    #             for landmark in faceLandmarks.landmark[:468]
+    #         ]
+    #     )
 
-        return cv2.dilate(faceMask, np.ones((7, 7), dtype=np.uint8),iterations=1)
+    #     yCoordinates = np.array(
+    #         [
+    #             int(landmark.y * imageHeight)
+    #             for landmark in faceLandmarks.landmark[:468]
+    #         ]
+    #     )
 
+    #     # Combine x and y coordinates into [x, y] points
+    #     facePoints = np.column_stack((xCoordinates, yCoordinates)).astype(np.int32)
+
+    #     # Create and fill the face mask using the Convex Hull
+    #     faceMask = np.zeros((imageHeight, imageWidth), dtype=np.uint8)
+    #     faceHull = cv2.convexHull(facePoints)
+    #     cv2.fillConvexPoly(faceMask, faceHull, 255)
+
+    #     # Slightly enlarge the mask
+    #     return cv2.dilate(faceMask,np.ones((7, 7), dtype=np.uint8),iterations=1)
+
+    # Pad the image
     def makeSquareImage(self, image):
         imageHeight, imageWidth = image.shape[:2]
         squareSize = max(imageHeight, imageWidth)
@@ -118,62 +139,28 @@ class SeasonPredictor:
         return squareImage
 
     def createMaskedHeadImage(self,frame,imageRgb,faceLandmarks):
-        cropBounds = self.calculateCropBounds(frame, faceLandmarks)
+        headMask, cropMinimumX, cropMaximumX, cropMinimumY, cropMaximumY = self.fillFaceRectangle(frame, faceLandmarks)
 
-        if cropBounds is None:
-            return None
+        # Probability map where there is a person and where is not
+        segmentationResult = self.personSegmenter.process(imageRgb)
 
-        cropMinimumX, cropMinimumY, cropMaximumX, cropMaximumY = cropBounds
-        imageHeight, imageWidth = frame.shape[:2]
+        # Choose only the pixels, for which the confidence is bigger than 35%. Fill them with white
+        personMask = (segmentationResult.segmentation_mask > 0.35).astype(np.uint8) * 255
 
-        faceMask = self.createFaceMask(frame, faceLandmarks)
-        headRegionMask = np.zeros(
-            (imageHeight, imageWidth),
-            dtype=np.uint8,
-        )
-        cv2.rectangle(
-            headRegionMask,
-            (cropMinimumX, cropMinimumY),
-            (cropMaximumX, cropMaximumY),
-            255,
-            thickness=-1,
-        )
+        # Delete unesesary things like shoulders and the background from the personMask
+        headAndHairMask = cv2.bitwise_and(personMask,headMask)
 
-        # The runtime mask combines FaceMesh geometry with person segmentation so that hair remains available to the classifier.
-        segmentationResult = (
-            self.personSegmenter.process(imageRgb)
-            if self.personSegmenter is not None
-            else None
-        )
-
-        if (
-            segmentationResult is not None
-            and segmentationResult.segmentation_mask is not None
-        ):
-            personMask = (
-                segmentationResult.segmentation_mask > 0.35
-            ).astype(np.uint8) * 255
-            headAndHairMask = cv2.bitwise_and(
-                personMask,
-                headRegionMask,
-            )
-            combinedMask = cv2.bitwise_or(faceMask, headAndHairMask)
-        else:
-            combinedMask = faceMask
-
-        combinedMask = cv2.morphologyEx(
-            combinedMask,
+        # Fill the empty spaces
+        headAndHairMask = cv2.morphologyEx(
+            headAndHairMask,
             cv2.MORPH_CLOSE,
             np.ones((5, 5), dtype=np.uint8),
         )
-        combinedMask = cv2.bitwise_and(combinedMask, headRegionMask)
+        headAndHairMask = cv2.bitwise_and(headAndHairMask, headMask)
 
         maskedFrame = np.zeros_like(frame)
-        maskedFrame[combinedMask > 0] = frame[combinedMask > 0]
-        maskedCrop = maskedFrame[
-            cropMinimumY:cropMaximumY,
-            cropMinimumX:cropMaximumX,
-        ]
+        maskedFrame[headAndHairMask > 0] = frame[headAndHairMask > 0]
+        maskedCrop = maskedFrame[cropMinimumY:cropMaximumY,cropMinimumX:cropMaximumX]
 
         if maskedCrop.size == 0:
             return None

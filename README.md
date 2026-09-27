@@ -33,9 +33,6 @@ Please run the application from the root directory.
 ## Privacy
 This application runs locally. No images are uploaded or stored by default.
 
-## Files usage
-
-
 ## To-do/improvements:
 - Re-write neural season classifier
 - Change the data folder
