@@ -4,17 +4,17 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import torch
-from res_insert import ResNet18, testTransform
+from app.resnet import ResNet18, testTransform
 from PIL import Image
 
-path = Path("models/resNet18_season")
+path = Path("models/resNet18_season.pth")
 expectedModelName = "ResNet18"
 defaultClassNames = ["spring", "summer", "autumn", "winter"]
 defaultSubClassNames = ["bright", "cool", "deep", "light", "soft", "warm"]
 
 
 class SeasonPredictor:
-    def __init__(self, checkpointPath=path, predictionInterval=8, smoothingDecay=0.85, minimumPredictionCount=3, minimumConfidence=0.45):
+    def __init__(self, checkpointPath=path, predictionInterval=8, smoothingDecay=0.7, minimumPredictionCount=3, minimumConfidence=0.45):
         self.checkpointPath = Path(checkpointPath)
         self.predictionInterval = predictionInterval
         self.smoothingDecay = smoothingDecay
@@ -23,7 +23,8 @@ class SeasonPredictor:
 
         self.validFrameCount = 0
         self.predictionCount = 0
-        self.smoothedProbabilities = None
+        self.smoothedClassProbabilities = None
+        self.smoothedSubClassProbabilities = None
 
         # The model is loaded once and reused for every accepted camera frame.
         self.device = torch.device("mps")
@@ -37,7 +38,6 @@ class SeasonPredictor:
         self.classNames = list(defaultClassNames)
         self.subClassNames = list(defaultSubClassNames)
 
-        self.loadCheckpoint()
         self.model.eval()
 
         self.personSegmenter = self.createPersonSegmenter()
@@ -96,36 +96,6 @@ class SeasonPredictor:
                     thickness=-1,
                 ), cropMinimumX, cropMaximumX, cropMinimumY, cropMaximumY
 
-    # Create a mask for the face only using convex hull
-    # def createFaceMask(self, frame, faceLandmarks):
-    #     imageHeight, imageWidth = frame.shape[:2]
-
-    #     # Scale the coordinatess back to pixels
-    #     xCoordinates = np.array(
-    #         [
-    #             int(landmark.x * imageWidth)
-    #             for landmark in faceLandmarks.landmark[:468]
-    #         ]
-    #     )
-
-    #     yCoordinates = np.array(
-    #         [
-    #             int(landmark.y * imageHeight)
-    #             for landmark in faceLandmarks.landmark[:468]
-    #         ]
-    #     )
-
-    #     # Combine x and y coordinates into [x, y] points
-    #     facePoints = np.column_stack((xCoordinates, yCoordinates)).astype(np.int32)
-
-    #     # Create and fill the face mask using the Convex Hull
-    #     faceMask = np.zeros((imageHeight, imageWidth), dtype=np.uint8)
-    #     faceHull = cv2.convexHull(facePoints)
-    #     cv2.fillConvexPoly(faceMask, faceHull, 255)
-
-    #     # Slightly enlarge the mask
-    #     return cv2.dilate(faceMask,np.ones((7, 7), dtype=np.uint8),iterations=1)
-
     # Pad the image
     def makeSquareImage(self, image):
         imageHeight, imageWidth = image.shape[:2]
@@ -168,80 +138,96 @@ class SeasonPredictor:
         return self.makeSquareImage(maskedCrop)
 
     def calculateProbabilities(self, maskedHeadImage):
+        # Transform to RGB
         rgbImage = cv2.cvtColor(maskedHeadImage, cv2.COLOR_BGR2RGB)
-        inputTensor = self.inputTransform(
-            Image.fromarray(rgbImage)
-        ).unsqueeze(0)
+
+        # Transform the rgbImage to PIL.Image, transform the same as inputs for the ResNet, unsqueeze adds the batch dimension
+        inputTensor = self.inputTransform(Image.fromarray(rgbImage)).unsqueeze(0)
         inputTensor = inputTensor.to(self.device)
+
+        # Flip the face horizontally and combine them into one batch
         flippedTensor = torch.flip(inputTensor, dims=[3])
         inputBatch = torch.cat([inputTensor, flippedTensor], dim=0)
 
+        # Test-Time Augmentation: take the mean from the predictions to ensure that they're more stable
         with torch.inference_mode():
-            logits = self.model(inputBatch).mean(dim=0)
-            probabilities = torch.softmax(logits, dim=0)
+            classLogits, subClassLogits = self.model(inputBatch)
 
-        return probabilities.cpu().numpy()
+            classLogits = classLogits.mean(dim=0)
+            subClassLogits = subClassLogits.mean(dim=0)
 
-    def updateSmoothing(self, probabilities):
-        if self.smoothedProbabilities is None:
-            self.smoothedProbabilities = probabilities
+            classProbabilities = torch.softmax(classLogits, dim=0)
+            subClassProbabilities = torch.softmax(subClassLogits, dim=0)
+
+        return classProbabilities.cpu().numpy(), subClassProbabilities.cpu().numpy()
+
+    def updateSmoothing(self, classProbabilities, subClassProbabilities):
+        # If this is the first prediction, just take it
+        # If it's not the first, then add them to the previous predictions with less weight
+        if self.smoothedClassProbabilities is None and self.smoothedSubClassProbabilities is None:
+            self.smoothedClassProbabilities = classProbabilities
+            self.smoothedSubClassProbabilities = subClassProbabilities
         else:
-            self.smoothedProbabilities = (
-                self.smoothingDecay * self.smoothedProbabilities
-                + (1.0 - self.smoothingDecay) * probabilities
-            )
+            self.smoothedClassProbabilities = self.smoothingDecay * self.smoothedClassProbabilities + (1.0 - self.smoothingDecay) * classProbabilities
+            self.smoothedSubClassProbabilities = self.smoothingDecay * self.smoothedSubClassProbabilities + (1.0 - self.smoothingDecay) * subClassProbabilities
 
-        self.smoothedProbabilities = (
-            self.smoothedProbabilities
-            / self.smoothedProbabilities.sum()
-        )
+        # Normalize the probabilities back
+        self.smoothedClassProbabilities = self.smoothedClassProbabilities / self.smoothedClassProbabilities.sum()
+        self.smoothedSubClassProbabilities = self.smoothedSubClassProbabilities / self.smoothedSubClassProbabilities.sum()    
         self.predictionCount += 1
 
     def getCurrentPrediction(self):
-        if self.smoothedProbabilities is None:
+        if (self.smoothedClassProbabilities is None or self.smoothedSubClassProbabilities is None):
             return None
 
-        classIndex = int(self.smoothedProbabilities.argmax())
-        confidence = float(self.smoothedProbabilities[classIndex])
+        classIndex = int(self.smoothedClassProbabilities.argmax())
+        subClassIndex = int(self.smoothedSubClassProbabilities.argmax())
+
+        classConfidence = float(self.smoothedClassProbabilities[classIndex])
+        subClassConfidence = float(self.smoothedSubClassProbabilities[subClassIndex])
 
         return {
             "season": self.classNames[classIndex],
-            "confidence": confidence,
-            "probabilities": {
-                className: float(self.smoothedProbabilities[index])
+            "subClass": self.subClassNames[subClassIndex],
+
+            "classConfidence": classConfidence,
+            "subClassConfidence": subClassConfidence,
+
+            "classProbabilities": {
+                className: float(self.smoothedClassProbabilities[index])
                 for index, className in enumerate(self.classNames)
+            },
+
+            "subClassProbabilities": {
+                subClassName: float(self.smoothedSubClassProbabilities[index])
+                for index, subClassName in enumerate(self.subClassNames)
             },
             "predictionCount": self.predictionCount,
             "minimumPredictionCount": self.minimumPredictionCount,
             "ready": self.predictionCount >= self.minimumPredictionCount,
-            "lowConfidence": confidence < self.minimumConfidence,
+
+            "lowClassConfidence": classConfidence < self.minimumConfidence,
+
+            "lowSubClassConfidence": subClassConfidence < self.minimumConfidence
         }
 
     def processFrame(self, frame, imageRgb, faceLandmarks):
-        shouldPredict = (
-            self.validFrameCount % self.predictionInterval == 0
-        )
+        shouldPredict = (self.validFrameCount % self.predictionInterval == 0)
         self.validFrameCount += 1
 
         if shouldPredict:
-            maskedHeadImage = self.createMaskedHeadImage(
-                frame,
-                imageRgb,
-                faceLandmarks,
-            )
+            maskedHeadImage = self.createMaskedHeadImage(frame,imageRgb,faceLandmarks)
 
-            if maskedHeadImage is not None:
-                probabilities = self.calculateProbabilities(
-                    maskedHeadImage
-                )
-                self.updateSmoothing(probabilities)
+            classProbabilities, subClassProbabilities = self.calculateProbabilities(maskedHeadImage)
+            self.updateSmoothing(classProbabilities, subClassProbabilities)
 
         return self.getCurrentPrediction()
 
     def reset(self):
         self.validFrameCount = 0
         self.predictionCount = 0
-        self.smoothedProbabilities = None
+        self.smoothedClassProbabilities = None
+        self.smoothedSubClassProbabilities = None
 
     def close(self):
         if self.personSegmenter is not None:
@@ -262,7 +248,9 @@ def drawSeasonPrediction(frame, prediction):
         return
 
     seasonName = prediction["season"].title()
-    confidencePercent = int(round(prediction["confidence"] * 100))
+    subSeasonName = prediction["subClass"].title()
+    confidencePercent = int(round(prediction["classConfidence"] * 100))
+    subConfidencePercent = int(round(prediction["subClassConfidence"] * 100))
 
     if not prediction["ready"]:
         resultText = (
@@ -270,13 +258,16 @@ def drawSeasonPrediction(frame, prediction):
             f"{prediction['predictionCount']}/"
             f"{prediction['minimumPredictionCount']} "
             f"({seasonName} {confidencePercent}%)"
+            f"({subSeasonName} {subConfidencePercent}%)"
         )
         textColor = (255, 255, 255)
-    elif prediction["lowConfidence"]:
-        resultText = f"Season: {seasonName}? ({confidencePercent}%)"
+    elif prediction["lowClassConfidence"]:
+        resultText = (f"Season: {seasonName}? ({confidencePercent}%)"
+                      f"SubSeason: {subSeasonName}? ({subConfidencePercent}%)")
         textColor = (0, 200, 255)
     else:
-        resultText = f"Season: {seasonName} ({confidencePercent}%)"
+        resultText = (f"Season: {seasonName} ({confidencePercent}%)"
+                      f"SubSeason: {subSeasonName} ({subConfidencePercent}%)")
         textColor = (100, 255, 100)
 
     cv2.rectangle(frame, (10, 10), (570, 60), (0, 0, 0), thickness=-1)

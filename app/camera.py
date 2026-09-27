@@ -33,8 +33,6 @@ def runCamera():
                     validationErrors = validateFace(image, faceLandmarks)
 
                     if validationErrors:
-                        drawSeasonPrediction(image, currentPrediction)
-
                         for index, error in enumerate(validationErrors):
                             cv2.putText(
                                 image,
