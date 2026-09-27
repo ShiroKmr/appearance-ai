@@ -1,8 +1,8 @@
 import cv2
 import mediapipe as mp
 
-from face_validation import validateFace
-from neural_season_classifier import SeasonPredictor, drawSeasonPrediction
+from app.face_validation import validateFace
+from app.neural_season_classifier import SeasonPredictor, drawSeasonPrediction
 
 def runCamera():
     faceMeshModule = mp.solutions.face_mesh

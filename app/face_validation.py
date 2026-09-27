@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from app.baseline.helpers import getPoint
 
 # MediaPipe indexes
 NOSE_TIP = 1

@@ -26,9 +26,15 @@ Real-time facial analysis with color season classification and virtual makeup tr
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python app/main.py
+python -m app.main
 ```
 Please run the application from the root directory.
+
+## Files
+App: Real-time face features analysis using a ResNet18 neural network
+App/Baseline: Manual analysis and season prediction
+
+ResNet and ResNet_train splitted to separate the training with the model's definition. 
 
 ## Privacy
 This application runs locally. No images are uploaded or stored by default.
