@@ -1,5 +1,5 @@
 ## Project description
-Real-time facial analysis with color season classification and virtual makeup try-on.
+Real-time facial analysis with color season classification.
 
 ## Milestones
 - [x] Set a camera capture
@@ -34,15 +34,10 @@ Please run the application from the root directory.
 App: Real-time face features analysis using a ResNet18 neural network
 App/Baseline: Manual analysis and season prediction
 
-ResNet and ResNet_train splitted to separate the training with the model's definition. 
+ResNet and ResNet_train were split to separate the training from the model's definition. 
 
 ## Privacy
 This application runs locally. No images are uploaded or stored by default.
-
-## To-do/improvements:
-- Re-write neural season classifier
-- Change the data folder
-- Document the pre-processing of frames, data folder
 
 ## Dataset used for color analysis
 Lorenzo Stacchio and Marina Paolanti and Francesca Spigarelli and Emanuele Frontoni,
